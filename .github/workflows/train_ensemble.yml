@@ -25,27 +25,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download latest data artifact (optional)
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: brasileirao-data
-          path: data/
-
-      - name: Fetch + Features (si no hay artifact)
+      # Ya no dependemos de artefactos de otros workflows
+      - name: Fetch + Features (siempre, datos reales)
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
         run: |
-          if [ ! -f data/features.parquet ]; then
-            python -m src.data.fetch
-            python -m src.data.features
-          fi
+          python -m src.data.fetch
+          python -m src.data.features
 
       - name: Train ensemble
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
-        run: |
-          python -m src.train
+        run: python -m src.train
 
       - name: Upload models
         uses: actions/upload-artifact@v4
