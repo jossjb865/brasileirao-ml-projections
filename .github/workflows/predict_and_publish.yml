@@ -2,13 +2,13 @@ name: Predict & Publish
 
 on:
   schedule:
-    - cron: "30 6 * * *"  # 06:30 UTC diario
+    - cron: "30 6 * * *"
   workflow_dispatch:
 
 jobs:
   predict:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -25,37 +25,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download models
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: brasileirao-models
-          path: models/
-
-      - name: Download data
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: brasileirao-data
-          path: data/
-
-      - name: Ensure data & models exist
+      # Autosuficiente: descarga datos + entrena si hace falta
+      - name: Ensure data exists
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
         run: |
-          if [ ! -f data/features.parquet ]; then
-            python -m src.data.fetch
-            python -m src.data.features
-          fi
+          python -m src.data.fetch
+          python -m src.data.features
+
+      - name: Ensure models exist (entrenar si no hay)
+        env:
+          THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
+        run: |
           if [ ! -f models/ensemble_weights.joblib ]; then
+            echo "No hay modelos. Entrenando..."
             python -m src.train
+          else
+            echo "Modelos encontrados."
           fi
 
       - name: Generate predictions
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
-        run: |
-          python -m src.predict
+        run: python -m src.predict
 
       - name: Upload predictions
         uses: actions/upload-artifact@v4
