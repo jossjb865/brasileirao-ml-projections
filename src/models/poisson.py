@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import joblib
 import numpy as np
@@ -50,6 +50,19 @@ class PoissonModel:
 
     def fit(self, df: pd.DataFrame) -> "PoissonModel":
         train = df[df["status"].str.lower().isin(["finished", "ft", "complete"])].copy()
+
+        # Eliminar filas con marcadores NaN (evita ValueError: Input y contains NaN)
+        train = train.dropna(subset=["home_score", "away_score"])
+        train["home_score"] = pd.to_numeric(train["home_score"], errors="coerce")
+        train["away_score"] = pd.to_numeric(train["away_score"], errors="coerce")
+        train = train.dropna(subset=["home_score", "away_score"])
+
+        if len(train) < 20:
+            raise RuntimeError(
+                f"PoissonModel: solo {len(train)} partidos con marcador válido. "
+                "Revisa el fetch de datos."
+            )
+
         X, y_home, y_away = self._prepare(train)
         self.home_model.fit(X, y_home)
         self.away_model.fit(X, y_away)
@@ -79,7 +92,10 @@ class PoissonModel:
             p_draw = np.trace(matrix)
             p_away = matrix[np.triu_indices_from(matrix, k=1)].sum()
             total = p_home + p_draw + p_away
-            probs[i] = [p_home / total, p_draw / total, p_away / total]
+            if total > 0:
+                probs[i] = [p_home / total, p_draw / total, p_away / total]
+            else:
+                probs[i] = [1 / 3, 1 / 3, 1 / 3]
         return probs
 
     def save(self, path: Optional[Path] = None) -> Path:
