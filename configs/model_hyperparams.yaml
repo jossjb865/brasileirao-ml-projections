@@ -1,0 +1,52 @@
+poisson:
+  alpha: 1.0
+
+xgboost:
+  n_estimators: 300
+  max_depth: 5
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  random_state: 42
+
+catboost:
+  iterations: 400
+  depth: 6
+  learning_rate: 0.05
+  random_seed: 42
+
+decision_tree:
+  max_depth: 8
+  min_samples_leaf: 20
+
+lstm_momentum:
+  seq_len: 5
+  units: 64
+  epochs: 25
+  batch_size: 32
+
+lstm_result:
+  seq_len: 5
+  units: 48
+  epochs: 20
+  batch_size: 32
+
+lstm_model:
+  seq_len: 5
+  units: 80
+  epochs: 30
+  batch_size: 32
+
+ensemble:
+  weights:
+    poisson: 0.18
+    xgboost: 0.22
+    catboost: 0.22
+    decision_tree: 0.08
+    lstm_momentum: 0.10
+    lstm_result: 0.08
+    lstm_model: 0.12
+
+features:
+  rolling_window: 5
+  min_history_matches: 3
