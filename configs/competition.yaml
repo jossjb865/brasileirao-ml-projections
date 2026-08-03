@@ -1,0 +1,27 @@
+competition:
+  id: "comp_4795"
+  name: "Campeonato Brasileiro Série A"
+  country: "Brazil"
+  country_code: "BR"
+
+# Temporadas a descargar (histórico + actual). 
+# El season_id real se resuelve automáticamente en runtime.
+seasons_to_fetch:
+  - current          # siempre la temporada activa
+  - previous         # temporada anterior completa
+  # Puedes añadir más años si la API los tiene disponibles
+
+api:
+  base_url: "https://api.thestatsapi.com/api"
+  max_per_page: 100
+  request_timeout: 30
+  max_retries: 3
+  retry_backoff_seconds: 2
+
+storage:
+  data_dir: "data"
+  matches_file: "matches.parquet"
+  stats_file: "match_stats.parquet"
+  odds_file: "odds.parquet"
+  features_file: "features.parquet"
+  standings_file: "standings.parquet"
