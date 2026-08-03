@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.data.features import build_features
@@ -42,11 +43,24 @@ def train_pipeline(force_rebuild_features: bool = True) -> None:
         & features["result"].notna()
     ].copy()
 
-    logger.info("Partidos de entrenamiento: %s", len(train_df))
+    # Eliminar cualquier NaN residual en scores
+    train_df = train_df.dropna(subset=["home_score", "away_score"])
+    train_df["home_score"] = pd.to_numeric(train_df["home_score"], errors="coerce")
+    train_df["away_score"] = pd.to_numeric(train_df["away_score"], errors="coerce")
+    train_df = train_df.dropna(subset=["home_score", "away_score"])
+
+    # Recalcular result de forma segura
+    train_df["result"] = np.where(
+        train_df["home_score"] > train_df["away_score"],
+        0,
+        np.where(train_df["home_score"] == train_df["away_score"], 1, 2),
+    ).astype(int)
+
+    logger.info("Partidos de entrenamiento (con marcador válido): %s", len(train_df))
     if len(train_df) < 50:
         raise RuntimeError(
             f"Pocos partidos para entrenar ({len(train_df)}). "
-            "Descarga más historial."
+            "Descarga más historial o revisa el fetch."
         )
 
     weights = cfg.get("ensemble", {}).get("weights")
