@@ -32,7 +32,7 @@ def get_upcoming_matches(client, days_ahead: int = 14) -> pd.DataFrame:
     while True:
         resp = client.get_matches(
             competition_id=COMPETITION_ID,
-            status="scheduled",          # o "notstarted" / "fixture" según API
+            status="scheduled",
             date_from=str(today),
             date_to=str(date_to),
             page=page,
@@ -40,7 +40,6 @@ def get_upcoming_matches(client, days_ahead: int = 14) -> pd.DataFrame:
         )
         items = resp.get("data", [])
         if not items:
-            # Fallback: sin filtro de status
             resp = client.get_matches(
                 competition_id=COMPETITION_ID,
                 date_from=str(today),
@@ -90,7 +89,7 @@ def get_upcoming_matches(client, days_ahead: int = 14) -> pd.DataFrame:
 def attach_rolling_features(upcoming: pd.DataFrame, historical: pd.DataFrame) -> pd.DataFrame:
     """
     Calcula features de forma usando el historial real ya descargado
-    y las une a los partidos futuros.
+    y las une a los partidos futuros (incluyendo volumen de corners y remates).
     """
     from src.data.features import _rolling_team_stats
 
@@ -99,7 +98,7 @@ def attach_rolling_features(upcoming: pd.DataFrame, historical: pd.DataFrame) ->
 
     long = _rolling_team_stats(historical, window=5)
 
-    # Último estado conocido por equipo
+    # Último estado conocido por equipo incluyendo variables de volumen
     last_state = (
         long.sort_values("kickoff_utc")
         .groupby("team_id")
@@ -111,57 +110,55 @@ def attach_rolling_features(upcoming: pd.DataFrame, historical: pd.DataFrame) ->
                 "roll_points_5",
                 "roll_goal_diff_5",
                 "roll_matches_5",
+                "roll_corners_for_5",
+                "roll_corners_against_5",
+                "roll_shots_target_for_5",
+                "roll_shots_target_against_5",
             ]
         ]
-        .rename(
-            columns={
-                "roll_goals_for_5": "gf_roll5",
-                "roll_goals_against_5": "ga_roll5",
-                "roll_points_5": "pts_roll5",
-                "roll_goal_diff_5": "gd_roll5",
-                "roll_matches_5": "matches_roll5",
-            }
-        )
     )
 
-    up = upcoming.copy()
-    up = up.merge(
-        last_state.add_prefix("home_"),
-        left_on="home_team_id",
-        right_on="home_team_id",
-        how="left",
-    )
-    # Corregir merge
     home_state = last_state.rename(
         columns={
             "team_id": "home_team_id",
-            "gf_roll5": "home_gf_roll5",
-            "ga_roll5": "home_ga_roll5",
-            "pts_roll5": "home_pts_roll5",
-            "gd_roll5": "home_gd_roll5",
-            "matches_roll5": "home_matches_roll5",
+            "roll_goals_for_5": "home_gf_roll5",
+            "roll_goals_against_5": "home_ga_roll5",
+            "roll_points_5": "home_pts_roll5",
+            "roll_goal_diff_5": "home_gd_roll5",
+            "roll_matches_5": "home_matches_roll5",
+            "roll_corners_for_5": "home_corners_for_roll",
+            "roll_corners_against_5": "home_corners_against_roll",
+            "roll_shots_target_for_5": "home_shots_target_for_roll",
+            "roll_shots_target_against_5": "home_shots_target_against_roll",
         }
     )
     away_state = last_state.rename(
         columns={
             "team_id": "away_team_id",
-            "gf_roll5": "away_gf_roll5",
-            "ga_roll5": "away_ga_roll5",
-            "pts_roll5": "away_pts_roll5",
-            "gd_roll5": "away_gd_roll5",
-            "matches_roll5": "away_matches_roll5",
+            "roll_goals_for_5": "away_gf_roll5",
+            "roll_goals_against_5": "away_ga_roll5",
+            "roll_points_5": "away_pts_roll5",
+            "roll_goal_diff_5": "away_gd_roll5",
+            "roll_matches_5": "away_matches_roll5",
+            "roll_corners_for_5": "away_corners_for_roll",
+            "roll_corners_against_5": "away_corners_against_roll",
+            "roll_shots_target_for_5": "away_shots_target_for_roll",
+            "roll_shots_target_against_5": "away_shots_target_against_roll",
         }
     )
 
     up = upcoming.merge(home_state, on="home_team_id", how="left")
     up = up.merge(away_state, on="away_team_id", how="left")
 
+    # Diferencias clásicas y de volumen para el modelo
     up["gf_diff_roll5"] = up["home_gf_roll5"] - up["away_gf_roll5"]
     up["pts_diff_roll5"] = up["home_pts_roll5"] - up["away_pts_roll5"]
     up["gd_diff_roll5"] = up["home_gd_roll5"] - up["away_gd_roll5"]
+    up["corners_diff_roll5"] = up["home_corners_for_roll"] - up["away_corners_for_roll"]
+    up["shots_target_diff_roll5"] = up["home_shots_target_for_roll"] - up["away_shots_target_for_roll"]
 
     # Rellenar NaN (equipos nuevos o sin historial)
-    roll_cols = [c for c in up.columns if "roll" in c]
+    roll_cols = [c for c in up.columns if "roll" in c or "diff" in c]
     up[roll_cols] = up[roll_cols].fillna(0.0)
 
     return up
