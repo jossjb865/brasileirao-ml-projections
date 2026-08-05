@@ -18,7 +18,13 @@ from src.utils import load_yaml, setup_logging, ensure_dirs, get_models_dir
 logger = logging.getLogger(__name__)
 
 
-def train_pipeline(force_rebuild_features: bool = True) -> None:
+def train_pipeline(force_rebuild_features: bool = False) -> None:
+    """Ejecuta el pipeline de entrenamiento.
+
+    Por defecto NO reconstruye features para evitar volver a descargar datos en CI.
+    Pasa `force_rebuild_features=True` localmente si quieres regenerar desde los
+    datos originales (esto puede requerir ejecutar `src.data.fetch`).
+    """
     setup_logging()
     cfg = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "model_hyperparams.yaml")
     ensure_dirs(get_models_dir())
@@ -30,11 +36,13 @@ def train_pipeline(force_rebuild_features: bool = True) -> None:
         logger.info("Construyendo features desde datos reales…")
         window = cfg.get("features", {}).get("rolling_window", 5)
         features = build_features(window=window)
+    else:
+        logger.info("Usando features pre-generados (no se realizará fetch de la API en este paso)")
 
     if features.empty:
         raise RuntimeError(
             "No hay features disponibles. "
-            "Ejecuta primero el fetch de datos (src.data.fetch)."
+            "Ejecuta primero el fetch de datos (src.data.fetch) o añade los archivos de datos de las últimas dos temporadas en el directorio `data/`."
         )
 
     # Solo partidos finalizados con target válido
@@ -77,4 +85,5 @@ def train_pipeline(force_rebuild_features: bool = True) -> None:
 
 
 if __name__ == "__main__":
-    train_pipeline(force_rebuild_features=True)
+    # No reconstruir por defecto para evitar descargas completas en CI.
+    train_pipeline(force_rebuild_features=False)
