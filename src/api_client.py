@@ -33,9 +33,14 @@ class TheStatsAPIClient:
 
         self.timeout = timeout
         self.session = requests.Session()
+        # TheStatsAPI accepts the API key via a custom header (x-api-key) in some
+        # integrations; older examples also use Authorization: Bearer <key>.
+        # Send both to be compatible with either expectation. If TheStatsAPI
+        # requires a single header, the provider will accept x-api-key.
         self.session.headers.update(
             {
                 "Authorization": f"Bearer {self.api_key}",
+                "x-api-key": self.api_key,
                 "Accept": "application/json",
                 "User-Agent": "brasileirao-ml-projections/1.0",
             }
@@ -54,7 +59,24 @@ class TheStatsAPIClient:
     def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict:
         url = f"{BASE_URL}{endpoint}"
         response = self.session.get(url, params=params or {}, timeout=self.timeout)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            status = None
+            try:
+                status = e.response.status_code  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            if status == 401:
+                # Provide a clearer error message for CI failures so it's
+                # straightforward to diagnose secret/header issues.
+                raise RuntimeError(
+                    "Unauthorized: THESTATS_API_KEY está ausente o inválida, "
+                    "o la API requiere que THESTATS_API_KEY sea la clave (sin el prefijo 'Bearer '). "
+                    "Asegúrate de que el secreto THESTATS_API_KEY esté configurado en GitHub y que "
+                    "el workflow lo exporte como variable de entorno."
+                ) from e
+            raise
         return response.json()
 
     def get_competitions(
