@@ -66,7 +66,6 @@ def flatten_match(m: Dict) -> Dict[str, Any]:
     away = m.get("away_team") or m.get("away") or {}
     score = m.get("score") or {}
 
-    # Algunas respuestas traen score dentro de home/away
     home_score = home.get("score")
     away_score = away.get("score")
     if home_score is None:
@@ -95,12 +94,11 @@ def flatten_match(m: Dict) -> Dict[str, Any]:
 
 
 def flatten_stats(match_id: str, stats_resp: Dict) -> Dict[str, Any]:
-    """Extrae estadísticas de equipo del endpoint /stats."""
+    """Extrae estadísticas de equipo del endpoint /stats incluyendo esquinas y tiros a puerta."""
     data = stats_resp.get("data") or stats_resp
     home = data.get("home") or {}
     away = data.get("away") or {}
 
-    # Algunas respuestas anidan bajo "overview" o "statistics"
     if "overview" in data:
         overview = data["overview"]
         home = overview.get("home") or home
@@ -118,10 +116,10 @@ def flatten_stats(match_id: str, stats_resp: Dict) -> Dict[str, Any]:
         "away_possession": safe_get(away, "possession", "ball_possession"),
         "home_shots": safe_get(home, "shots", "total_shots"),
         "away_shots": safe_get(away, "shots", "total_shots"),
-        "home_shots_on_target": safe_get(home, "shots_on_target", "shots_on_goal"),
-        "away_shots_on_target": safe_get(away, "shots_on_target", "shots_on_goal"),
-        "home_corners": safe_get(home, "corners"),
-        "away_corners": safe_get(away, "corners"),
+        "home_shots_on_target": safe_get(home, "shots_on_target", "shots_on_goal", "shots_target"),
+        "away_shots_on_target": safe_get(away, "shots_on_target", "shots_on_goal", "shots_target"),
+        "home_corners": safe_get(home, "corners", "corner_kicks"),
+        "away_corners": safe_get(away, "corners", "corner_kicks"),
         "home_fouls": safe_get(home, "fouls"),
         "away_fouls": safe_get(away, "fouls"),
         "home_yellow_cards": safe_get(home, "yellow_cards", "yellow"),
@@ -136,11 +134,10 @@ def flatten_stats(match_id: str, stats_resp: Dict) -> Dict[str, Any]:
 
 
 def flatten_odds(match_id: str, odds_resp: Dict) -> Dict[str, Any]:
-    """Extrae cuotas 1X2 principales (mejor esfuerzo sobre la estructura real)."""
+    """Extrae cuotas 1X2 principales."""
     data = odds_resp.get("data") or odds_resp
     row: Dict[str, Any] = {"match_id": match_id}
 
-    # Estructura típica: bookmakers → markets → outcomes
     bookmakers = data.get("bookmakers") or data.get("odds") or []
     if isinstance(bookmakers, dict):
         bookmakers = [bookmakers]
@@ -162,7 +159,6 @@ def flatten_odds(match_id: str, odds_resp: Dict) -> Dict[str, Any]:
                     elif "away" in oname or oname in ("2", "away"):
                         row[f"{name}_away"] = price
 
-    # Fallback simple si la API devuelve opening/last directamente
     for key in ("home", "draw", "away", "1", "x", "2"):
         if key in data:
             row[f"odds_{key}"] = data[key]
@@ -266,7 +262,6 @@ def run_full_fetch(
     client = get_client()
     store = DataStore()
 
-    # Health check
     try:
         health = client.health()
         logger.info("API health: %s", health)
@@ -289,7 +284,7 @@ def run_full_fetch(
     finished = matches_df[matches_df["status"].str.lower().isin(["finished", "ft", "complete"])]
     match_ids = finished["match_id"].dropna().unique().tolist()
     if max_stats_matches:
-        match_ids = match_ids[-max_stats_matches:]  # los más recientes
+        match_ids = match_ids[-max_stats_matches:]
 
     # 3. Stats (solo partidos finalizados)
     if include_stats and match_ids:
