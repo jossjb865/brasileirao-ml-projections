@@ -35,7 +35,7 @@ def _rolling_team_stats(
 
     df = df.sort_values("kickoff_utc").reset_index(drop=True)
 
-    # Expandir a filas por equipo
+    # Expandir a filas por equipo (añadiendo columnas de corners y remates al arco si existen en matches)
     home = df[
         [
             "match_id",
@@ -45,13 +45,17 @@ def _rolling_team_stats(
             "home_score",
             "away_score",
             "season_id",
-        ]
+        ] + ([c for c in ["home_corners", "away_corners", "home_shots_target", "away_shots_target"] if c in df.columns])
     ].rename(
         columns={
             "home_team_id": "team_id",
             "home_team_name": "team_name",
             "home_score": "goals_for",
             "away_score": "goals_against",
+            "home_corners": "corners_for",
+            "away_corners": "corners_against",
+            "home_shots_target": "shots_target_for",
+            "away_shots_target": "shots_target_against",
         }
     )
     home["is_home"] = 1
@@ -65,13 +69,17 @@ def _rolling_team_stats(
             "away_score",
             "home_score",
             "season_id",
-        ]
+        ] + ([c for c in ["home_corners", "away_corners", "home_shots_target", "away_shots_target"] if c in df.columns])
     ].rename(
         columns={
             "away_team_id": "team_id",
             "away_team_name": "team_name",
             "away_score": "goals_for",
             "home_score": "goals_against",
+            "away_corners": "corners_for",
+            "home_corners": "corners_against",
+            "away_shots_target": "shots_target_for",
+            "home_shots_target": "shots_target_against",
         }
     )
     away["is_home"] = 0
@@ -86,9 +94,20 @@ def _rolling_team_stats(
     )
     long["goal_diff"] = long["goals_for"] - long["goals_against"]
 
+    # Rellenar ceros por seguridad si no vienen columnas de corners/remates aún en matches
+    for col_vol in ["corners_for", "corners_against", "shots_target_for", "shots_target_against"]:
+        if col_vol not in long.columns:
+            long[col_vol] = 0.0
+        else:
+            long[col_vol] = pd.to_numeric(long[col_vol], errors="coerce").fillna(0.0)
+
     # Rolling (shift para no usar el partido actual)
     g = long.groupby("team_id", group_keys=False)
-    for col in ["goals_for", "goals_against", "points", "goal_diff"]:
+    rolling_cols_list = [
+        "goals_for", "goals_against", "points", "goal_diff",
+        "corners_for", "corners_against", "shots_target_for", "shots_target_against"
+    ]
+    for col in rolling_cols_list:
         long[f"roll_{col}_{window}"] = g[col].apply(
             lambda x: x.shift(1).rolling(window, min_periods=1).mean()
         )
@@ -120,32 +139,13 @@ def build_features(
 
     home_cols = {
         "match_id": "match_id",
-        "roll_goals_for_5": "home_gf_roll5",
-        "roll_goals_against_5": "home_ga_roll5",
-        "roll_points_5": "home_pts_roll5",
-        "roll_goal_diff_5": "home_gd_roll5",
-        "roll_matches_5": "home_matches_roll5",
-    }
-    away_cols = {
-        "match_id": "match_id",
-        "roll_goals_for_5": "away_gf_roll5",
-        "roll_goals_against_5": "away_ga_roll5",
-        "roll_points_5": "away_pts_roll5",
-        "roll_goal_diff_5": "away_gd_roll5",
-        "roll_matches_5": "away_matches_roll5",
-    }
-
-    # Adaptar nombres de columnas rolling al window real
-    home_cols = {k.replace("_5", f"_{window}"): v for k, v in home_cols.items()}
-    away_cols = {k.replace("_5", f"_{window}"): v for k, v in away_cols.items()}
-    # Corregir las claves que ya tenían el número
-    home_cols = {
-        "match_id": "match_id",
         f"roll_goals_for_{window}": "home_gf_roll5",
         f"roll_goals_against_{window}": "home_ga_roll5",
         f"roll_points_{window}": "home_pts_roll5",
         f"roll_goal_diff_{window}": "home_gd_roll5",
         f"roll_matches_{window}": "home_matches_roll5",
+        f"roll_corners_for_{window}": "home_corners_for_roll",
+        f"roll_shots_target_for_{window}": "home_shots_target_for_roll",
     }
     away_cols = {
         "match_id": "match_id",
@@ -154,7 +154,14 @@ def build_features(
         f"roll_points_{window}": "away_pts_roll5",
         f"roll_goal_diff_{window}": "away_gd_roll5",
         f"roll_matches_{window}": "away_matches_roll5",
+        f"roll_corners_for_{window}": "away_corners_for_roll",
+        f"roll_shots_target_for_{window}": "away_shots_target_for_roll",
     }
+
+    # Reemplazar dinámicamente el '_5' por el window real si es distinto
+    if window != 5:
+        home_cols = {k.replace("_5", f"_{window}"): v for k, v in home_cols.items()}
+        away_cols = {k.replace("_5", f"_{window}"): v for k, v in away_cols.items()}
 
     home_f = long[long["is_home"] == 1][list(home_cols.keys())].rename(columns=home_cols)
     away_f = long[long["is_home"] == 0][list(away_cols.keys())].rename(columns=away_cols)
@@ -189,6 +196,12 @@ def build_features(
         (features.loc[valid_score, "home_score"] > 0)
         & (features.loc[valid_score, "away_score"] > 0)
     ).astype(int)
+
+    # Definir targets reales totales para corners y remates al arco si vienen en los datos
+    if "home_corners" in features.columns and "away_corners" in features.columns:
+        features["total_corners"] = pd.to_numeric(features["home_corners"], errors="coerce") + pd.to_numeric(features["away_corners"], errors="coerce")
+    if "home_shots_target" in features.columns and "away_shots_target" in features.columns:
+        features["total_shots_target"] = pd.to_numeric(features["home_shots_target"], errors="coerce") + pd.to_numeric(features["away_shots_target"], errors="coerce")
 
     # Stats si existen
     if not stats.empty:
