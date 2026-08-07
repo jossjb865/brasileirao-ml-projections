@@ -19,33 +19,31 @@ decision_tree:
   max_depth: 8
   min_samples_leaf: 20
 
-lstm_momentum:
-  seq_len: 5
-  units: 64
-  epochs: 25
-  batch_size: 32
-
-lstm_result:
-  seq_len: 5
-  units: 48
-  epochs: 20
-  batch_size: 32
-
-lstm_model:
-  seq_len: 5
-  units: 80
-  epochs: 30
-  batch_size: 32
+logistic_model:
+  C: 1.0
+  max_iter: 500
+  solver: "lbfgs"
+  random_state: 42
 
 ensemble:
+  optimization:
+    method: "scipy.optimize"
+    metric: "log_loss"
+    bounds: [0.0, 1.0]
   weights:
-    poisson: 0.18
-    xgboost: 0.22
-    catboost: 0.22
-    decision_tree: 0.08
-    lstm_momentum: 0.10
-    lstm_result: 0.08
-    lstm_model: 0.12
+    poisson: 0.20
+    xgboost: 0.30
+    catboost: 0.30
+    decision_tree: 0.10
+    logistic_model: 0.10
+
+calibration:
+  method: "isotonic"
+  n_bins: 10
+
+cross_validation:
+  n_splits: 5
+  test_size: 50
 
 features:
   rolling_window: 5

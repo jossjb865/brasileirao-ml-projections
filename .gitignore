@@ -1,39 +1,14 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-*.egg-info/
-dist/
-build/
-
-# Data & models (se generan en runtime)
 data/
 models/
 outputs/
+.cache/
 *.parquet
-*.pkl
 *.joblib
-*.h5
 *.keras
-*.pt
-*.pth
-
-# Secrets / local
+*.csv
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
 .env
-.env.*
-*.key
-
-# IDE / OS
-.idea/
-.vscode/
-.DS_Store
-*.swp
-.ipynb_checkpoints/
-
-# GitHub Actions artifacts
-artifacts/
+logs_*.zip

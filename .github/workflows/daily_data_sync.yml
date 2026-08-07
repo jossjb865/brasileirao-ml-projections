@@ -5,6 +5,10 @@ on:
     - cron: "0 5 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: daily_data_sync-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -17,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
@@ -25,7 +29,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch real data from TheStatsAPI
+      - name: Fetch data with incremental updates
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
         run: python -m src.data.fetch
@@ -41,3 +45,15 @@ jobs:
           name: brasileirao-data
           path: data/
           retention-days: 14
+
+      - name: Report failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Workflow Failure] Daily Data Sync failed on ${new Date().toISOString().split('T')[0]}`,
+              body: `The Daily Data Sync workflow failed. Please inspect the logs here: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            })

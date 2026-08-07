@@ -1,92 +1,113 @@
 """
-XGBoost multiclass (1X2) + regresión de goles.
+XGBoost multiclass classification model for 1X2 match outcomes.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 
 import joblib
 import numpy as np
 import pandas as pd
-from xgboost import XGBClassifier, XGBRegressor
+from xgboost import XGBClassifier
 
-from src.utils import get_models_dir, ensure_dirs
+from src.data.features import FEATURE_COLUMNS
+from src.models.base_model import Base1X2Model
+from src.utils import ensure_dirs, get_models_dir, load_yaml, ROOT
 
 logger = logging.getLogger(__name__)
 
 
-class XGBoostModel:
+def _load_xgboost_params() -> Dict[str, Any]:
+    cfg_path = ROOT / "configs" / "model_hyperparams.yaml"
+    if cfg_path.exists():
+        cfg = load_yaml(cfg_path)
+        return cfg.get("xgboost", {})
+    return {}
+
+
+class XGBoostModel(Base1X2Model):
+    """
+    XGBoost multi-class classifier predicting 1X2 outcomes (0=Home, 1=Draw, 2=Away).
+    """
+
     def __init__(self, **kwargs):
-        default = dict(
-            n_estimators=300,
-            max_depth=5,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            objective="multi:softprob",
-            num_class=3,
-            eval_metric="mlogloss",
-            random_state=42,
-            n_jobs=-1,
-        )
-        default.update(kwargs)
-        self.clf = XGBClassifier(**default)
-        self.reg_home = XGBRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05, random_state=42, n_jobs=-1
-        )
-        self.reg_away = XGBRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05, random_state=42, n_jobs=-1
-        )
+        params = _load_xgboost_params()
+        default_params = {
+            "n_estimators": 300,
+            "max_depth": 5,
+            "learning_rate": 0.05,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "random_state": 42,
+            "objective": "multi:softprob",
+            "num_class": 3,
+            "eval_metric": "mlogloss",
+            "n_jobs": -1,
+        }
+        default_params.update(params)
+        default_params.update(kwargs)
+
+        self.clf = XGBClassifier(**default_params)
         self.feature_cols: List[str] = []
         self.is_fitted = False
 
-    def _feature_cols(self, df: pd.DataFrame) -> List[str]:
-        exclude = {
-            "match_id", "competition_id", "season_id", "season_name", "status",
-            "kickoff_utc", "matchday", "home_team_id", "home_team_name",
-            "away_team_id", "away_team_name", "home_score", "away_score",
-            "home_ht_score", "away_ht_score", "result", "total_goals", "btts",
-            "xg_available", "odds_available",
-        }
-        cols = [
-            c for c in df.columns
-            if c not in exclude and pd.api.types.is_numeric_dtype(df[c])
-        ]
-        return cols
+    @property
+    def name(self) -> str:
+        return "xgboost"
 
-    def fit(self, df: pd.DataFrame) -> "XGBoostModel":
-        train = df[df["status"].str.lower().isin(["finished", "ft", "complete"])].copy()
-        self.feature_cols = self._feature_cols(train)
-        X = train[self.feature_cols].fillna(0.0)
-        y = train["result"].astype(int)
+    def _select_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        cols = [c for c in FEATURE_COLUMNS if c in X.columns]
+        if not cols:
+            exclude_cols = {
+                "match_id",
+                "kickoff_utc",
+                "status",
+                "home_team_id",
+                "away_team_id",
+                "home_team_name",
+                "away_team_name",
+                "home_match_count",
+                "away_match_count",
+                "home_score",
+                "away_score",
+                "result",
+            }
+            cols = [
+                c for c in X.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(X[c])
+            ]
+        return X[cols].fillna(0.0)
 
-        self.clf.fit(X, y)
-        self.reg_home.fit(X, train["home_score"].astype(float))
-        self.reg_away.fit(X, train["away_score"].astype(float))
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "XGBoostModel":
+        X_clean = self._select_features(X)
+        self.feature_cols = list(X_clean.columns)
+        y_clean = y.astype(int)
+
+        self.clf.fit(X_clean, y_clean)
         self.is_fitted = True
-        logger.info("XGBoostModel entrenado con %s partidos, %s features", len(train), len(self.feature_cols))
+        logger.info("XGBoostModel fitted on %d samples with %d features", len(X_clean), len(self.feature_cols))
         return self
 
-    def predict_proba_1x2(self, df: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         if not self.is_fitted:
-            raise RuntimeError("Modelo no entrenado")
-        X = df[self.feature_cols].fillna(0.0)
-        return self.clf.predict_proba(X)
-
-    def predict_goals(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-        X = df[self.feature_cols].fillna(0.0)
-        return self.reg_home.predict(X), self.reg_away.predict(X)
+            raise RuntimeError("XGBoostModel is not fitted yet.")
+        X_clean = self._select_features(X)
+        X_clean = X_clean.reindex(columns=self.feature_cols, fill_value=0.0)
+        return self.clf.predict_proba(X_clean)
 
     def save(self, path: Optional[Path] = None) -> Path:
-        ensure_dirs(get_models_dir())
-        path = path or get_models_dir() / "xgboost.joblib"
-        joblib.dump(self, path)
-        return path
+        save_path = path or (get_models_dir() / "xgboost.joblib")
+        ensure_dirs(save_path.parent)
+        joblib.dump(self, save_path)
+        logger.info("XGBoostModel saved to %s", save_path)
+        return save_path
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "XGBoostModel":
-        path = path or get_models_dir() / "xgboost.joblib"
-        return joblib.load(path)
+        load_path = path or (get_models_dir() / "xgboost.joblib")
+        obj = joblib.load(load_path)
+        if not isinstance(obj, XGBoostModel):
+            raise TypeError(f"Loaded object is {type(obj)}, expected XGBoostModel")
+        return obj

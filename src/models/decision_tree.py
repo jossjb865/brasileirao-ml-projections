@@ -1,69 +1,106 @@
 """
-Árbol de decisión (baseline interpretable).
+Decision Tree classification model for 1X2 match outcomes.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
 
-from src.utils import get_models_dir, ensure_dirs
+from src.data.features import FEATURE_COLUMNS
+from src.models.base_model import Base1X2Model
+from src.utils import ensure_dirs, get_models_dir, load_yaml, ROOT
 
 logger = logging.getLogger(__name__)
 
 
-class DecisionTreeModel:
-    def __init__(self, max_depth: int = 8, min_samples_leaf: int = 20):
-        self.clf = DecisionTreeClassifier(
-            max_depth=max_depth,
-            min_samples_leaf=min_samples_leaf,
-            random_state=42,
-        )
+def _load_dt_params() -> Dict[str, Any]:
+    cfg_path = ROOT / "configs" / "model_hyperparams.yaml"
+    if cfg_path.exists():
+        cfg = load_yaml(cfg_path)
+        return cfg.get("decision_tree", {})
+    return {}
+
+
+class DecisionTreeModel(Base1X2Model):
+    """
+    Decision Tree baseline classifier for 1X2 outcomes (0=Home, 1=Draw, 2=Away).
+    """
+
+    def __init__(self, **kwargs):
+        params = _load_dt_params()
+        default_params = {
+            "max_depth": 8,
+            "min_samples_leaf": 20,
+            "random_state": 42,
+        }
+        default_params.update(params)
+        default_params.update(kwargs)
+
+        self.clf = DecisionTreeClassifier(**default_params)
         self.feature_cols: List[str] = []
         self.is_fitted = False
 
-    def _feature_cols(self, df: pd.DataFrame) -> List[str]:
-        exclude = {
-            "match_id", "competition_id", "season_id", "season_name", "status",
-            "kickoff_utc", "matchday", "home_team_id", "home_team_name",
-            "away_team_id", "away_team_name", "home_score", "away_score",
-            "home_ht_score", "away_ht_score", "result", "total_goals", "btts",
-            "xg_available", "odds_available",
-        }
-        return [
-            c for c in df.columns
-            if c not in exclude and pd.api.types.is_numeric_dtype(df[c])
-        ]
+    @property
+    def name(self) -> str:
+        return "decision_tree"
 
-    def fit(self, df: pd.DataFrame) -> "DecisionTreeModel":
-        train = df[df["status"].str.lower().isin(["finished", "ft", "complete"])].copy()
-        self.feature_cols = self._feature_cols(train)
-        X = train[self.feature_cols].fillna(0.0)
-        y = train["result"].astype(int)
-        self.clf.fit(X, y)
+    def _select_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        cols = [c for c in FEATURE_COLUMNS if c in X.columns]
+        if not cols:
+            exclude_cols = {
+                "match_id",
+                "kickoff_utc",
+                "status",
+                "home_team_id",
+                "away_team_id",
+                "home_team_name",
+                "away_team_name",
+                "home_match_count",
+                "away_match_count",
+                "home_score",
+                "away_score",
+                "result",
+            }
+            cols = [
+                c for c in X.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(X[c])
+            ]
+        return X[cols].fillna(0.0)
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "DecisionTreeModel":
+        X_clean = self._select_features(X)
+        self.feature_cols = list(X_clean.columns)
+        y_clean = y.astype(int)
+
+        self.clf.fit(X_clean, y_clean)
         self.is_fitted = True
-        logger.info("DecisionTreeModel entrenado con %s partidos", len(train))
+        logger.info("DecisionTreeModel fitted on %d samples with %d features", len(X_clean), len(self.feature_cols))
         return self
 
-    def predict_proba_1x2(self, df: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         if not self.is_fitted:
-            raise RuntimeError("Modelo no entrenado")
-        X = df[self.feature_cols].fillna(0.0)
-        return self.clf.predict_proba(X)
+            raise RuntimeError("DecisionTreeModel is not fitted yet.")
+        X_clean = self._select_features(X)
+        X_clean = X_clean.reindex(columns=self.feature_cols, fill_value=0.0)
+        return self.clf.predict_proba(X_clean)
 
     def save(self, path: Optional[Path] = None) -> Path:
-        ensure_dirs(get_models_dir())
-        path = path or get_models_dir() / "decision_tree.joblib"
-        joblib.dump(self, path)
-        return path
+        save_path = path or (get_models_dir() / "decision_tree.joblib")
+        ensure_dirs(save_path.parent)
+        joblib.dump(self, save_path)
+        logger.info("DecisionTreeModel saved to %s", save_path)
+        return save_path
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "DecisionTreeModel":
-        path = path or get_models_dir() / "decision_tree.joblib"
-        return joblib.load(path)
+        load_path = path or (get_models_dir() / "decision_tree.joblib")
+        obj = joblib.load(load_path)
+        if not isinstance(obj, DecisionTreeModel):
+            raise TypeError(f"Loaded object is {type(obj)}, expected DecisionTreeModel")
+        return obj

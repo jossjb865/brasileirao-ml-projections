@@ -4,12 +4,11 @@ competition:
   country: "Brazil"
   country_code: "BR"
 
-# Temporadas a descargar (histórico + actual). 
-# El season_id real se resuelve automáticamente en runtime.
 seasons_to_fetch:
   - current          # siempre la temporada activa
   - previous         # temporada anterior completa
-  # Puedes añadir más años si la API los tiene disponibles
+  - previous-2       # hace 2 temporadas
+  - previous-3       # hace 3 temporadas para mayor volumen de datos
 
 api:
   base_url: "https://api.thestatsapi.com/api"
@@ -17,6 +16,16 @@ api:
   request_timeout: 30
   max_retries: 3
   retry_backoff_seconds: 2
+  requests_per_second: 2
+  circuit_breaker_threshold: 3
+
+cache:
+  enabled: true
+  ttl_hours: 12
+
+prediction:
+  days_ahead: 14
+  min_confidence: 0.35
 
 storage:
   data_dir: "data"
