@@ -1,8 +1,11 @@
 name: Predict & Publish
 
 on:
-  schedule:
-    - cron: "30 6 * * *"
+  # Triggered automatically when Train Ensemble completes successfully
+  workflow_run:
+    workflows: ["Train Ensemble"]
+    types: [completed]
+  # Also allow manual dispatch
   workflow_dispatch:
 
 concurrency:
@@ -11,8 +14,10 @@ concurrency:
 
 jobs:
   predict:
+    # Only run if triggered by a successful upstream workflow, or by manual dispatch
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -43,14 +48,16 @@ jobs:
           name: brasileirao-models
           path: models/
 
-      - name: Ensure data exists (Fallback fetch)
+      - name: Ensure data exists (Fast fallback - matches only)
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
         run: |
           if [ ! -f data/matches.parquet ]; then
-            echo "Data missing. Executing fallback fetch and feature build..."
-            python -m src.data.fetch
+            echo "Data missing. Executing fast fallback fetch (matches only, no stats/odds)..."
+            python -m src.data.fetch --skip-stats --skip-odds
             python -m src.data.features
+          else
+            echo "Data artifact found. Skipping fetch."
           fi
 
       - name: Ensure models exist (Fallback train)
@@ -60,6 +67,8 @@ jobs:
           if [ ! -f models/ensemble.joblib ]; then
             echo "Models missing. Executing fallback ensemble training..."
             python -m src.train
+          else
+            echo "Models artifact found. Skipping training."
           fi
 
       - name: Generate predictions
