@@ -41,7 +41,7 @@ class TheStatsAPIClient:
         timeout: int = 30,
         max_retries: int = 3,
         backoff: float = 2.0,
-        rate_limit_sleep: float = 0.1,
+        rate_limit_sleep: float = 4.0,
         use_cache: bool = True,
         cache_dir: Optional[str | Path] = None,
     ):
@@ -305,7 +305,7 @@ class TheStatsAPIClient:
 
 def get_client(
     api_key: Optional[str] = None,
-    rate_limit_sleep: float = 0.1,
+    rate_limit_sleep: float = 4.0,
     use_cache: bool = True,
 ) -> TheStatsAPIClient:
     """Función de conveniencia para instanciar el cliente."""

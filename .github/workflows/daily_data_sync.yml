@@ -12,7 +12,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -29,10 +29,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch data with incremental updates
+      - name: Fetch matches + stats (skip odds for speed)
         env:
           THESTATS_API_KEY: ${{ secrets.THESTATS_API_KEY }}
-        run: python -m src.data.fetch
+        run: python -m src.data.fetch --skip-odds
 
       - name: Build features
         env:

@@ -58,6 +58,8 @@ def select_target_seasons(
         (s for s in seasons_sorted if s.get("is_current")), seasons_sorted[0]
     )
 
+    current_idx = seasons_sorted.index(current_season) if current_season in seasons_sorted else 0
+
     for item in wanted:
         item_str = str(item).strip().lower()
         if item_str == "current":
@@ -69,6 +71,14 @@ def select_target_seasons(
             )
             if prev:
                 targets.append(prev)
+        elif item_str.startswith("previous-"):
+            # Handle "previous-2", "previous-3", etc.
+            try:
+                offset = int(item_str.split("-", 1)[1])
+                if offset < len(seasons_sorted):
+                    targets.append(seasons_sorted[offset])
+            except (ValueError, IndexError):
+                logger.warning("No se pudo resolver la temporada %s", item_str)
         else:
             matched = next(
                 (
@@ -372,7 +382,7 @@ def fetch_match_stats(
     client: TheStatsAPIClient,
     match_ids: List[str],
     max_matches: Optional[int] = None,
-    sleep: float = 0.1,
+    sleep: float = 0.0,
 ) -> pd.DataFrame:
     target_ids = match_ids[:max_matches] if max_matches else match_ids
     rows = []
@@ -390,7 +400,7 @@ def fetch_match_stats(
 def fetch_match_odds(
     client: TheStatsAPIClient,
     match_ids: List[str],
-    sleep: float = 0.1,
+    sleep: float = 0.0,
 ) -> pd.DataFrame:
     rows = []
     logger.info("Descargando cuotas para %s partidos...", len(match_ids))
